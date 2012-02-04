@@ -1,0 +1,18 @@
+#!/bin/bash
+
+dest='/opt/solr'
+v='3.5.0'
+filename="apache-solr-$v-src.tgz"
+url="http://www.apache.org/dist/lucene/solr/$v/$filename"
+orig_dir=$PWD
+
+[[ -e $dest ]] || mkdir $dest
+if [[ ! -e "/tmp/$filename" ]]; then
+    cd /tmp
+    wget $url
+fi
+
+cd $dest
+tar --strip=3 -zxf /tmp/$filename apache-solr-$v/solr/example
+cp $orig_dir/{schema,solrconfig}.xml $dest/solr/conf
+
