@@ -1,0 +1,329 @@
+#!/usr/bin/python
+import json, re, httplib
+from optparse import OptionParser
+from urllib import urlopen
+
+solr_host = 'localhost'
+solr_port = 8983
+solr_location = '/opt/solr'
+
+secondary = [ 'ia700303', 'ia700400', 'ia700401', 'ia700402', 'ia700609',
+'ia700608', 'ia700607', 'ia700605', 'ia700604', 'ia700603', 'ia700602',
+'ia700601', 'ia700600', 'ia700606', 'ia700403', 'ia700404', 'ia700405',
+'ia700406', 'ia700507', 'ia700407', 'ia700408', 'ia700409', 'ia700207',
+'ia700209', 'ia700208', 'ia700206', 'ia700205', 'ia700204', 'ia700203',
+'ia700202', 'ia700201', 'ia700200', 'ia700309', 'ia700308', 'ia700307',
+'ia700306', 'ia700304', 'ia700305', 'ia700302', 'ia700301', 'ia700300',
+'ia700509', 'ia700508', 'ia700506', 'ia700505', 'ia700504', 'ia700503',
+'ia700502', 'ia700501', 'ia700500', 'ia700709', 'ia700708', 'ia700707',
+'ia700706', 'ia700705', 'ia700704', 'ia700703', 'ia700702', 'ia700701',
+'ia700700', 'ia700809', 'ia700808', 'ia700807', 'ia700806', 'ia700805',
+'ia700804', 'ia700803', 'ia700802', 'ia700801', 'ia700800']
+
+lang_map = {'afrikaans': 'afr', 'albanian': 'alb', 'arabic': 'ara', 'armenian': 'arm', 'azerbaijani': 'aze',
+ 'basque': 'baq', 'bosnian': 'bos', 'bulgarian': 'bul',
+ 'catalan': 'cat', 'chinese': 'chi', 'croatian': 'hrv', 'czech': 'cze',
+ 'danish': 'dan', 'deutsch': 'ger', 'dutch': 'dut',
+ 'en': 'eng', 'engilsh': 'eng', 'english': 'eng', 'english-handwritten': 'english-handwritten',
+ u'espa\xf1ol': 'spa', 'estonian': 'est', 'ng': 'eng',
+ 'finnish': 'fin', 'francais': 'fre', u'fran\xe7ais': 'fre', 'french': 'fre',
+ 'gag': 'glg', 'galician': 'glg', 'german': 'ger', 'greek': 'gre',
+ 'hebrew': 'heb', 'hindi': 'hin', 'hungarian': 'hun',
+ 'icelandic': 'ice', 'indonesian': 'ind', 'iri': 'gle', 'irish': 'gle', 'italian': 'ita', 'italiano': 'ita',
+ 'japanese': 'jpn',
+ 'kannada': 'kan',
+ 'latin': 'lat', 'lithuanian': 'lit',
+ 'malay': 'may', 'maltese': 'mlt',
+ 'norwegian': 'nor',
+ 'polish': 'pol', 'portuguese': 'por', u'portugu\xeas': 'por',
+ 'romanian': 'rum', 'russian': 'rus',
+ 'sanskrit': 'san', 'scc': 'srp', 'scr': 'hrv', 'serbian': 'srp', 'slovak': 'slo', 'slovenian': 'slv', 'spain': 'spa', 'spanish': 'spa', 'swahili': 'swa', 'swedish': 'swe',
+ 'tag': 'tgl', 'tagalog': 'tgl', 'tamil': 'tam', 'telugu': 'tel', 'thai': 'tha', 'turkish': 'tur',
+ 'ukrainian': 'ukr', 'urdu': 'urd',
+ 'vie': 'Vietnamese', 'vietnamese': 'vie',
+ 'welsh': 'wel'}
+
+re_mdy = re.compile('^(\d\d?)/(\d\d?)/(\d{4})$')
+re_ymd = re.compile('^\d{4}-\d\d-\d\d$')
+re_ymdhms = re.compile('^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)$')
+re_year = re.compile('(\d{4})')
+re_end_year = re.compile('^.*[^0-9](\d{4})$')
+def convert_date(s):
+    if s is None:
+        return
+    s = s.strip('[?]')
+    if len(s) == 4 and s.isdigit():
+        return s + '-01-01T00:00:00Z'
+    if len(s) == 8 and s.isdigit():
+        return s[:4] + '-' + s[4:6] + '-' + s[6:] + 'T00:00:00Z'
+    if len(s) == 14 and s.isdigit():
+        return s[:4] + '-' + s[4:6] + '-' + s[6:8] + 'T' + s[8:10] + ':' + s[10:12] + ':' + s[12:14] + 'Z'
+    m = re_mdy.match(s)
+    if m:
+        return m.group(3) + '-' + m.group(1) + '-' + m.group(2) + 'T00:00:00Z'
+    m = re_ymd.match(s)
+    if m:
+        return s + 'T00:00:00Z'
+    if len(s) > 4 and s[:4].isdigit() and not s[4].isdigit():
+        return s[:4] + '-01-01T00:00:00Z'
+    m = re_ymdhms.match(s)
+    if m:
+        return m.group(1) + 'T' + m.group(2) +'Z'
+    m = re_end_year.match(s)
+    if m:
+        return m.group(1) + '-01-01T00:00:00Z'
+
+re_html_tag = re.compile('<.*?>')
+re_linebreak = re.compile('<(br|p)[ /]*>', re.I)        
+re_newlines = re.compile('\n{3,}')
+def scrub_html(s):
+    if all(c in s for c in '<>'):
+        s = re_linebreak.sub('\n', s)
+        s = re_html_tag.sub('', s)
+    return s.strip('\n')
+
+
+re_tvarchive_title = re.compile('^(.*) : ([^:]*?) : (.*?)$')
+tv_cats = 'Series/Special|Music/Art|Family/Children|News/Business|Movie|Sports|Religious|Education|Paid Programming' 
+re_tv_cats = re.compile(r'^(' + tv_cats + ')\.(?: .+)?$')
+re_tvarchive_series = re.compile('^(.*?) *(' + tv_cats + ')\. +(?:\((.*)\) *)?(?:(.*?)\. *)?\(((?:1[89]|20)\d{2})\)')
+
+single_value_fields = ['imagecount', 'publisher', 'sponsor', 'mediatype',
+    'ppi', 'repub_state', 'operator', 'copyright-evidence-operator',
+    'possible-copyright-status', 'copyright-evidence', 'copyright-region',
+    'licenseurl', 'source', 'tuner', 'previous_item', 'next_item', 'video_codecs',
+    'audio_codecs', 'sample', 'frames_per_second', 'start_localtime', 'start_time',
+    'stop_time', 'utf_offset', 'runtime', 'aspect_ratio']
+
+dont_copy = set(['imagecount', 'ppi', 'repub_state', 'previous_item',
+    'next_item', 'video_codec', 'audio_codec', 'sample', 'frames_per_second',
+    'start_localtime', 'start_time', 'stop_time', 'utc_offset', 'runtime',
+    'aspect_ratio', 'ocr', 'downloads', 'noindex', 'handwritten',
+    'item_filename', 'description_raw', 'text', 'date', 'scandate',
+    'sponsordate', 'addeddate', 'publicdate', 'updatedate', 'closed_captions',
+    'closed_captioning', 'source_pixel_height', 'source_pixel_width',
+    'identifier-access', 'tuner'])
+
+def process_doc(identifier, doc):
+    doc['identifier'] = identifier
+    doc['noindex'] = 'noindex' in doc
+
+    is_tv = False
+    if 'title' in doc:
+        assert isinstance(doc['title'], list)
+        if len(doc['title']) == 1 and 'tvarchive' in doc.get('collection', []):
+            is_tv = True
+            m = re_tvarchive_title.match(doc['title'][0])
+            if m:
+                tv_program, tv_channel, tv_date = m.groups()
+                doc['tv_program'] = tv_program.strip()
+                doc['tv_channel'] = tv_channel.strip()
+                doc['tv_date'] = tv_date.strip()
+        doc['title'] = '; '.join(title for title in doc['title'] if title is not None)
+        if not doc['title']:
+            del doc['title']
+
+    if doc.get('closed_captioning') and doc['closed_captioning'][0]:
+        doc['closed_captioning'] = doc['closed_captioning'][0].lower() == 'yes'
+
+    if 'description' in doc:
+        assert isinstance(doc['description'], list)
+        doc['description_raw'] = doc['description']
+        if is_tv and doc['description'][0] is not None:
+            assert len(doc['description']) == 1
+            description = doc['description'][0]
+            #print 'desc:', description
+            try:
+                m = re_tvarchive_series.match(description)
+            except:
+                print doc['description']
+                raise
+            if m:
+                episode, tv_category, tv_lang, stars, original_year = m.groups()
+                if episode:
+                    doc['tv_episode_name'] = episode
+                    doc['tv_program_and_episode'] = ' :: '.join([tv_program, episode, original_year])
+                if stars:
+                    sep = ';' if ';' in stars else ','
+                    doc['tv_starring'] = [i.strip() for i in stars.split(sep)]
+                doc['tv_category'] = tv_category
+                doc['tv_original_year'] = int(original_year)
+                if tv_lang:
+                    doc.setdefault('language', []).append(tv_lang.strip())
+            else:
+                m = re_tv_cats.match(description)
+                if m:
+                    doc['tv_category'] = m.group(1)
+
+        else:
+            descriptions = [scrub_html(desc) for desc in doc['description'] if desc]
+            description = '\n\n'.join(desc for desc in descriptions if desc)
+        if description:
+            doc['description'] = re_newlines.sub('\n\n', description)
+        else:
+            del doc['description']
+    if 'language' in doc:
+        if doc.get('language') and any(l for l in doc['language']):
+            doc['handwritten'] = False
+        langs = []
+        for l in doc['language']:
+            if l is None:
+                continue
+            l2 = l.lower().strip('. ')
+            if 'handwritten' in l2:
+                doc['handwritten'] = True
+            if l2 in lang_map:
+                langs.append(lang_map[l2])
+            elif len(l2) == 3:
+                langs.append(l2)
+            elif 'english' in l.lower():
+                langs.append('eng')
+        if langs:
+            doc['language_facet'] = langs
+
+    if 'date' in doc:
+        if doc['date'][0] is None:
+            del doc['date']
+        else:
+            doc['date_str'] = doc['date'][0]
+            d = convert_date(doc['date'][0])
+            if d:
+                doc['date'] = d
+                doc['year_from_date'] = int(d[:4])
+            else:
+                del doc['date']
+    for f in 'scandate', 'sponsordate', 'addeddate':
+        if f in doc:
+            v = doc[f][0]
+            if v is None:
+                del doc[f]
+            else:
+                doc[f] = convert_date(v)
+    for f in 'publicdate', 'updatedate':
+        if f in doc:
+            doc[f] = [convert_date(d) for d in doc[f] if d is not None]
+            if not doc[f]:
+                del doc[f]
+
+    for f in single_value_fields:
+        if f in doc and len(doc[f]) > 1:
+            doc[f] = doc[f][0]
+    if 'year' in doc:
+        years = []
+        for y in doc['year']:
+            if y is None:
+                continue
+            if y.isdigit() and len(y) < 5:
+                years.append(y)
+            else:
+                m = re_year.search(y)
+                if m:
+                    years.append(m.group(1))
+        if years:
+            doc['year'] = years
+        else:
+            del doc['year']
+
+    for k, v in doc.items():
+        if isinstance(v, list) and len(v) == 1:
+            doc[k] = v[0]
+        if doc[k] is None:
+            del doc[k]
+
+    if 'subject' in doc and not isinstance(doc['subject'], list):
+        subjects = []
+        if ';' in doc['subject']:
+            subjects = (s.strip() for s in doc['subject'].split(';'))
+        elif len(doc['subject']) > 20 and doc['subject'].count(',') > 3:
+            subjects = (s.strip() for s in doc['subject'].split(','))
+        if subjects:
+            doc['subject'] = [s for s in subjects if s and s != '.']
+
+    if 'rating' in doc:
+        rating = doc['rating']
+        assert not isinstance(rating, list)
+        doc['rating_facet'] = [r for r in (r.strip() for r in doc['rating'].split(';')) if r]
+
+    if 'ppi' in doc:
+        ppi = doc['ppi']
+        assert not isinstance(ppi, list)
+        if '.' in ppi: # 300.000 in gri_artistsmanua00stan
+            try:
+                doc['ppi'] = int(ppi[:ppi.find('.')])
+            except ValueError:
+                del doc['ppi']
+
+    doc['text'] = []
+    seen = set()
+    for k, v in doc.iteritems():
+        if k.endswith('_facet') or k.startswith('tv_') or k in dont_copy or `v` in seen:
+            continue
+        seen.add(`v`)
+        assert k not in dont_copy
+        if isinstance(v, list):
+            doc['text'] += v
+        else:
+            doc['text'].append(v)
+    return doc
+
+def solr_post(r):
+    h1 = httplib.HTTPConnection(solr_host, solr_port)
+    h1.connect()
+    url = 'http://%s:%d/solr/update/json' % (solr_host, solr_port)
+
+    h1.request('POST', url, r, { 'Content-type': 'application/json'})
+    response = h1.getresponse()
+    response_body = response.read()
+    if response.reason != 'OK':
+        print response.reason
+        print response_body
+    assert response.reason == 'OK'
+    if debug:
+        print response.reason
+    h1.close()
+
+def solr_update(docs, commitWithin=60*60*1000):
+    r = json.dumps([{ 'add': { 'commitWithin': commitWithin, 'doc': doc }} for doc in docs])
+    r = '{' + ',\n'.join('"add": ' + json.dumps({ 'commitWithin': commitWithin, 'doc': doc}) for doc in docs) +'}'
+
+    solr_post(r)
+
+def solr_index_size():
+    d = solr_location + 'solr/data/index'
+    return sum(os.path.getsize(f) for f in os.listdir(d) if os.path.isfile(f))
+
+def build(target_gb=None):
+    base_url = 'http://%s.us.archive.org/~edward/read_all_meta.php?dir=/%d' 
+    if target_gb:
+        target = target_gb * 1024 * 1024 * 1024
+    else:
+        target = None
+    docs = []
+    target_reached = False
+    for node in secondary:
+        print node
+        for disk in range(36):
+            url = base_url % (node, disk)
+            print url
+            f = urlopen(url)
+            for line in f:
+                item = json.loads(line)
+                doc = process_doc(item['identifier'][0], item)
+                if doc:
+                    docs.append(doc)
+                if len(docs) > 100:
+                    solr_update(docs)
+            if target and solr_index_size() > target:
+                target_reached = True
+                break
+        if target_reached:
+            break
+    if docs:
+        solr_update(docs)
+    solr_post(json.dumps({ 'commit': {}}))
+
+if __name__ == '__main__':
+    parser = OptionParser()
+    parser.add_option('--target', dest="target")
+    (options, args) = parser.parse_args()
+    build(target_gb=int(options.target))
