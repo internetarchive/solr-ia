@@ -806,78 +806,6 @@
       -->
     </requestHandler>
 
-  <!-- A Robust Example
-
-       This example SearchHandler declaration shows off usage of the
-       SearchHandler with many defaults declared
-
-       Note that multiple instances of the same Request Handler
-       (SearchHandler) can be registered multiple times with different
-       names (and different init parameters)
-    -->
-  <requestHandler name="/browse" class="solr.SearchHandler">
-     <lst name="defaults">
-       <str name="echoParams">explicit</str>
-
-       <!-- VelocityResponseWriter settings -->
-       <str name="wt">velocity</str>
-
-       <str name="v.template">browse</str>
-       <str name="v.layout">layout</str>
-       <str name="title">Solritas</str>
-
-       <str name="defType">edismax</str>
-       <str name="q.alt">*:*</str>
-       <str name="rows">10</str>
-       <str name="fl">*,score</str>
-       <str name="mlt.qf">
-         text^0.5 features^1.0 name^1.2 sku^1.5 id^10.0 manu^1.1 cat^1.4
-       </str>
-       <str name="mlt.fl">text,features,name,sku,id,manu,cat</str>
-       <int name="mlt.count">3</int>
-
-       <str name="qf">
-          text^0.5 features^1.0 name^1.2 sku^1.5 id^10.0 manu^1.1 cat^1.4
-       </str>
-
-       <str name="facet">on</str>
-       <str name="facet.field">cat</str>
-       <str name="facet.field">manu_exact</str>
-       <str name="facet.query">ipod</str>
-       <str name="facet.query">GB</str>
-       <str name="facet.mincount">1</str>
-       <str name="facet.pivot">cat,inStock</str>
-       <str name="facet.range.other">after</str>
-       <str name="facet.range">price</str>
-       <int name="f.price.facet.range.start">0</int>
-       <int name="f.price.facet.range.end">600</int>
-       <int name="f.price.facet.range.gap">50</int>
-       <str name="facet.range">popularity</str>
-       <int name="f.popularity.facet.range.start">0</int>
-       <int name="f.popularity.facet.range.end">10</int>
-       <int name="f.popularity.facet.range.gap">3</int>
-       <str name="facet.range">manufacturedate_dt</str>
-       <str name="f.manufacturedate_dt.facet.range.start">NOW/YEAR-10YEARS</str>
-       <str name="f.manufacturedate_dt.facet.range.end">NOW</str>
-       <str name="f.manufacturedate_dt.facet.range.gap">+1YEAR</str>
-       <str name="f.manufacturedate_dt.facet.range.other">before</str>
-       <str name="f.manufacturedate_dt.facet.range.other">after</str>
-
-
-       <!-- Highlighting defaults -->
-       <str name="hl">on</str>
-       <str name="hl.fl">text features name</str>
-       <str name="f.name.hl.fragsize">0</str>
-       <str name="f.name.hl.alternateField">name</str>
-     </lst>
-     <arr name="last-components">
-       <str>spellcheck</str>
-     </arr>
-     <!--
-     <str name="url-scheme">httpx</str>
-     -->
-  </requestHandler>
-
   <requestHandler name="/mlt" class="solr.MoreLikeThisHandler">
   </requestHandler>
 
@@ -1581,14 +1509,6 @@
     <str name="content-type">text/plain; charset=UTF-8</str>
   </queryResponseWriter>
   
-  <!--
-     Custom response writers can be declared as needed...
-    -->
-    <!-- The solr.velocity.enabled flag is used by Solr's test cases so that this response writer is not
-         loaded (causing an error if contrib/velocity has not been built fully) -->
-    <queryResponseWriter name="velocity" class="solr.VelocityResponseWriter" enable="${solr.velocity.enabled:true}"/>
-  
-
   <!-- XSLT response writer transforms the XML output by any xslt file found
        in Solr's conf/xslt directory.  Changes to xslt files are checked for
        every xsltCacheLifetimeSeconds.  

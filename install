@@ -2,7 +2,7 @@
 
 dest='/opt/solr'
 v='3.5.0'
-filename="apache-solr-$v-src.tgz"
+filename="apache-solr-$v.tgz"
 url="http://www.apache.org/dist/lucene/solr/$v/$filename"
 orig_dir=$PWD
 
@@ -13,6 +13,6 @@ if [[ ! -e "/tmp/$filename" ]]; then
 fi
 
 cd $dest
-tar --strip=3 -zxf /tmp/$filename apache-solr-$v/solr/example
+tar --strip=2 -zxf /tmp/$filename apache-solr-$v/example
 cp $orig_dir/{schema,solrconfig}.xml $dest/solr/conf
 
